@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ServerSocket" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="online.polp.Main" />
+    <module name="server-socket" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
