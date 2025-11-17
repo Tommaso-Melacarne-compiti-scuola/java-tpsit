@@ -12,13 +12,15 @@ public class Main {
     private static final List<Message> board = Collections.synchronizedList(new ArrayList<>());
 
     public static void main(String[] args) {
+        TokenStore tokenStore = new TokenStore();
+
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Server is listening on port " + PORT);
 
             do {
                 Socket socket = serverSocket.accept();
 
-                Thread listenerThread = new Thread(new Listener(socket, board));
+                Thread listenerThread = new Thread(new Listener(socket, tokenStore, board));
                 listenerThread.start();
             } while (true);
         } catch (IOException e) {

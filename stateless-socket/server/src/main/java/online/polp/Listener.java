@@ -4,13 +4,18 @@ import java.io.IOException;
 import java.net.Socket;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Optional;
+
+import online.polp.Command.CommandBuilder;
 
 public class Listener implements Runnable {
     private final Socket socket;
     private final List<Message> board;
+    private final TokenStore tokenStore;
 
-    public Listener(Socket socket, List<Message> board) {
+    public Listener(Socket socket, TokenStore tokenStore, List<Message> board) {
         this.socket = socket;
+        this.tokenStore = tokenStore;
         this.board = board;
     }
 
@@ -32,51 +37,48 @@ public class Listener implements Runnable {
     }
 
     void userRun(SocketWrapper socketWrapper) throws IOException {
-        socketWrapper.out.println("WELCOME");
+        Optional<Command> maybeCommand = getCommand(socketWrapper);
 
-        String username = null;
-
-        while (true) {
-            Command command = getCommand(socketWrapper);
-
-            if (command.commandName.equals("LOGIN")) {
-                if (username == null) {
-                    // If the user still did not login
-                    username = command.commandArg;
-                    socketWrapper.out.println("OK");
-                    
-                    continue;
-                }
-
-                // If the user has already logged in
-                socketWrapper.out.println("ERR LOGINREQUIRED");
-                
-                continue;
-            }
-
-            // Checks for login before running privileged commands
-            if (username == null) {
-                socketWrapper.out.println("ERR LOGINREQUIRED");
-                continue;
-            }
-
-            switch (command.commandName) {
-                case "ADD":
-                    execAdd(socketWrapper, board, username, command.commandArg);
-                    break;
-                case "LIST":
-                    execList(socketWrapper, board);
-                    break;
-                case "DEL":
-                    execDel(socketWrapper, board, username, command.commandArg);
-                    break;
-                case "QUIT":
-                    socketWrapper.out.println("BYE");
-                    socketWrapper.socket.close();
-                    break;
-            }
+        if (!maybeCommand.isPresent()) {
+            return;
         }
-        
+
+        Command command = maybeCommand.get();
+
+        if (command.commandName.equals("LOGIN")) {
+            execLogin(socketWrapper, command.commandArg);
+            return;
+        }
+
+        // Protecting other commands with token
+
+        String username = tokenStore.getUsername(command.token.orElse(""));
+
+        if (username == null) {
+            socketWrapper.out.println("ERR LOGINREQUIRED");
+            return;
+        }
+
+        switch (command.commandName) {
+            case "ADD":
+                execAdd(socketWrapper, board, username, command.commandArg);
+                break;
+            case "LIST":
+                execList(socketWrapper, board);
+                break;
+            case "DEL":
+                execDel(socketWrapper, board, username, command.commandArg);
+                break;
+            case "LOGOUT":
+                tokenStore.invalidateToken(command.token.get());
+                socketWrapper.out.println("OK");
+                break;
+        }
+    }
+
+    void execLogin(SocketWrapper socketWrapper, String username) {
+        String token = tokenStore.newToken(username);
+        socketWrapper.out.println("OK " + token);
     }
 
     void execAdd(SocketWrapper socketWrapper, List<Message> board, String username, String messageToAdd) {
@@ -110,13 +112,12 @@ public class Listener implements Runnable {
             return;
         }
 
-
         ListIterator<Message> iter = board.listIterator();
 
-        while (iter.hasNext()){
+        while (iter.hasNext()) {
             Message message = iter.next();
 
-            if (message.id == idToDelete){
+            if (message.id == idToDelete) {
                 if (!message.author.equals(username)) {
                     socketWrapper.out.println("ERR PERMISSION");
                     return;
@@ -131,17 +132,35 @@ public class Listener implements Runnable {
         socketWrapper.out.println("ERR NOTFOUND");
     }
 
-    Command getCommand(SocketWrapper socketWrapper) throws IOException {
-        while (true) {
-            String fullCommandLine = socketWrapper.in.readLine();
-            String[] commandLine = fullCommandLine.split(" ", 2);
+    Optional<Command> getCommand(SocketWrapper socketWrapper) throws IOException {
+        // First line is either COMMAND args or TOKEN thetoken COMMAND args
 
-            if (commandLine.length < 1) {
-                socketWrapper.out.println("ERR UNKNOWNCMD");
-                continue;
+        String line = socketWrapper.in.readLine();
+
+        if (line == null) {
+            return Optional.empty();
+        }
+
+        String[] parts = line.split(" ", 3);
+        CommandBuilder commandBuilder = Command.builder();
+        
+        int commandStartIndex = 0;
+        if (parts[0].equals("TOKEN")) {
+            if (parts.length < 3) {
+                socketWrapper.out.println("ERR SYNTAX");
+                return Optional.empty();
             }
 
-            return new Command(commandLine[0], commandLine.length == 1 ? null : commandLine[1]);
+            commandBuilder.token(Optional.of(parts[1]));
+            commandStartIndex = 2;
+        } else {
+            commandBuilder.token(Optional.empty());
         }
+
+        String[] commandParts = parts[commandStartIndex].split(" ", 2);
+        commandBuilder.commandName(commandParts[0]);
+        commandBuilder.commandArg(commandParts.length > 1 ? commandParts[1] : "");
+
+        return Optional.of(commandBuilder.build());
     }
 }
