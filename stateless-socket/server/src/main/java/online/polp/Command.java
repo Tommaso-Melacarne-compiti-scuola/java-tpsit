@@ -8,7 +8,8 @@ import lombok.Data;
 @Data
 @Builder
 public class Command {
-    final Optional<String> token;
+    @Builder.Default
+    Optional<String> token = Optional.empty();
     final String commandName;
     final String commandArg;
 }

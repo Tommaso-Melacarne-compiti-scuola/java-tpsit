@@ -2,6 +2,7 @@ package online.polp;
 
 import java.io.IOException;
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Optional;
@@ -133,34 +134,48 @@ public class Listener implements Runnable {
     }
 
     Optional<Command> getCommand(SocketWrapper socketWrapper) throws IOException {
-        // First line is either COMMAND args or TOKEN thetoken COMMAND args
+        // First line is either COMMAND args or TOKEN thetoken, then COMMAND args on the next line
 
-        String line = socketWrapper.in.readLine();
+        List<String> lines = new ArrayList<>();
 
-        if (line == null) {
+        String line;
+        // Loop to read lines until an empty line is encountered
+        while ((line = socketWrapper.in.readLine()) != null && !line.isEmpty()) {
+            lines.add(line);
+        }
+
+        if (lines.isEmpty()) {
             return Optional.empty();
         }
 
-        String[] parts = line.split(" ", 3);
-        CommandBuilder commandBuilder = Command.builder();
-        
-        int commandStartIndex = 0;
-        if (parts[0].equals("TOKEN")) {
-            if (parts.length < 3) {
+        String firstLine = lines.get(0);
+        String secondLine = lines.size() > 1 ? lines.get(1) : null;
+
+        CommandBuilder commandBuilder = new CommandBuilder();
+
+
+        if (firstLine.startsWith("TOKEN ")) {
+            String token = firstLine.substring(6).trim();
+            commandBuilder.token(Optional.of(token));
+
+            if (secondLine == null) {
                 socketWrapper.out.println("ERR SYNTAX");
                 return Optional.empty();
             }
 
-            commandBuilder.token(Optional.of(parts[1]));
-            commandStartIndex = 2;
+            parseCommandLine(commandBuilder, secondLine);
         } else {
-            commandBuilder.token(Optional.empty());
+            parseCommandLine(commandBuilder, firstLine);
         }
 
-        String[] commandParts = parts[commandStartIndex].split(" ", 2);
-        commandBuilder.commandName(commandParts[0]);
-        commandBuilder.commandArg(commandParts.length > 1 ? commandParts[1] : "");
-
         return Optional.of(commandBuilder.build());
+    }
+
+    void parseCommandLine(CommandBuilder commandBuilder, String line) {
+        String[] parts = line.split(" ", 2);
+        String commandName = parts[0].toUpperCase();
+        String commandArg = parts.length > 1 ? parts[1] : "";
+
+        commandBuilder.commandName(commandName).commandArg(commandArg);
     }
 }
