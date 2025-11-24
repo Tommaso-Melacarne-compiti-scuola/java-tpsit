@@ -44,7 +44,12 @@ public class Listener implements Runnable {
             headers.add(line);
         } while (!line.isEmpty());
 
-        String body = socketWrapper.in.lines().reduce("", (acc, curr) -> acc + curr + "\n");
+        StringBuilder bodySb = new StringBuilder();
+
+        while (socketWrapper.in.ready()) {
+            bodySb.append((char) socketWrapper.in.read());
+        }
+        String body = bodySb.toString();
 
         FirstLineHTTPRequest parsedFirstLine = new FirstLineHTTPRequest(
                 FirstLineHTTPRequest.Method.valueOf(method),
@@ -53,9 +58,35 @@ public class Listener implements Runnable {
 
         HTTPRequest request = new HTTPRequest(
                 parsedFirstLine,
-                headers.toArray(new String[0]),
-                body);
+                headers,
+                body
+            );
 
         System.out.println(request);
+
+
+        if (!method.equals("GET") || !path.equals("/")) {
+            String httpResponse = version + " 404 Not Found\r\n\r\n";
+            socketWrapper.out.write(httpResponse);
+            socketWrapper.out.flush();
+            socketWrapper.socket.close();
+            return;
+        }
+
+        String responseString = "Hello, World!";
+
+        String httpResponse = String.format(
+                version + " 200 OK\r\n" +
+                "Content-Length: %d\r\n" +
+                "Content-Type: text/plain\r\n" +
+                "\r\n" +
+                "%s",
+                responseString.length(),
+                responseString
+        );
+
+        socketWrapper.out.write(httpResponse);
+        socketWrapper.out.flush();
+        socketWrapper.socket.close();
     }
 }
