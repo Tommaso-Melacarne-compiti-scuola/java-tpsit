@@ -12,7 +12,6 @@ import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public class SocketWrapper implements Closeable {
     public final Socket socket;
@@ -54,7 +53,8 @@ public class SocketWrapper implements Closeable {
         FirstLineHTTPRequest parsedFirstLine = new FirstLineHTTPRequest(
                 FirstLineHTTPRequest.Method.valueOf(method),
                 path,
-                version);
+                version
+        );
 
         HTTPRequest request = new HTTPRequest(
                 parsedFirstLine,
@@ -63,19 +63,7 @@ public class SocketWrapper implements Closeable {
         return request;
     }
 
-    public void sendFirstLineHTTPResponse(String version, int statusCode) {
-        FirstLineHttpResponse response = new FirstLineHttpResponse(version, statusCode);
-
-        out.println(response.toString());
-    }
-
-    public void sendHeaders(Map<String, String> headers) {
-        headers.forEach((key, value) -> {
-            out.printf("%s: %s%n", key, value);
-        });
-    }
-
-    public void sendFile(File file) throws IOException {
+    public void sendFileBody(File file) throws IOException {
         try (InputStream input = new FileInputStream(file)) {
             byte[] buf = new byte[8192];
             int n;
@@ -83,5 +71,15 @@ public class SocketWrapper implements Closeable {
                 dataOut.write(buf, 0, n);
             }
         }
+    }
+
+    public void send(HTTPResponse response) throws IOException {
+        out.println(response.firstLineToString());
+
+        out.println(response.headersToString());
+
+        out.println();
+
+        dataOut.write(response.getBody());
     }
 }

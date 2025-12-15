@@ -22,4 +22,7 @@ public class FirstLineHTTPRequest {
         CONNECT
     }
 
+    boolean isHttpMethod(Method m) {
+        return this.method == m;   
+    }
 }
