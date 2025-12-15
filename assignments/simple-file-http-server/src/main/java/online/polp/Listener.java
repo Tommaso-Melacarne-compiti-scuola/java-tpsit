@@ -1,14 +1,11 @@
 package online.polp;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.URLConnection;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Map;
 
 public class Listener implements Runnable {
     private final Socket socket;
@@ -36,43 +33,8 @@ public class Listener implements Runnable {
         }
     }
 
-    HTTPRequest getRequestFromClient(SocketWrapper socketWrapper) throws IOException {
-        String firstLine = socketWrapper.in.readLine();
-
-        String[] firstLineParts = firstLine.split(" ");
-        String method = firstLineParts[0];
-        String path = firstLineParts[1];
-        String version = firstLineParts[2];
-
-        List<String> headers = new ArrayList<>();
-        String line;
-        do {
-            line = socketWrapper.in.readLine();
-            headers.add(line);
-        } while (!line.isEmpty());
-
-        StringBuilder bodySb = new StringBuilder();
-
-        while (socketWrapper.in.ready()) {
-            bodySb.append((char) socketWrapper.in.read());
-        }
-        String body = bodySb.toString();
-
-        FirstLineHTTPRequest parsedFirstLine = new FirstLineHTTPRequest(
-                FirstLineHTTPRequest.Method.valueOf(method),
-                path,
-                version);
-
-        HTTPRequest request = new HTTPRequest(
-                parsedFirstLine,
-                headers,
-                body);
-
-        return request;
-    }
-
-    void userRun(SocketWrapper socketWrapper) throws IOException {
-        HTTPRequest request = getRequestFromClient(socketWrapper);
+    private void userRun(SocketWrapper socketWrapper) throws IOException {
+        HTTPRequest request = socketWrapper.getRequest();
 
         System.out.println(request);
 
@@ -80,9 +42,7 @@ public class Listener implements Runnable {
         String version = firstLine.version;
 
         if (!request.firstLine.method.equals(FirstLineHTTPRequest.Method.GET)) {
-            String httpResponse = version + " 405 Method Not Allowed\r\n\r\n";
-            socketWrapper.out.write(httpResponse);
-            socketWrapper.close();
+            socketWrapper.sendFirstLineHTTPResponse(version, 405);
             return;
         }
 
@@ -90,36 +50,33 @@ public class Listener implements Runnable {
             firstLine.path += "index.html";
         }
 
-        File file = new File("./static/" + firstLine.path);
+        File file = new File("./htdocs/" + firstLine.path);
 
         if (!file.exists()) {
-            String httpResponse = version + " 404 Not Found\r\n\r\n";
-            socketWrapper.out.write(httpResponse);
+            socketWrapper.sendFirstLineHTTPResponse(version, 404);
             return;
         }
 
         if (file.isDirectory()) {
-            String httpResponse = String.format(
-                    "%s 301 Moved Permanently\r\nLocation: %s/\r\n",
-                    version,
-                    firstLine.path);
-            socketWrapper.out.write(httpResponse);
+            socketWrapper.sendFirstLineHTTPResponse(version, 301);
+            socketWrapper.out.printf("Location: %s", firstLine.path);
         }
 
-        socketWrapper.out.println(String.format(
-                "%s 200 OK\nContent-Length: %d\r\nContent-Type: %s\r\n",
-                version,
-                file.length(),
-                getContentType(file)));
-        InputStream input = new FileInputStream(file);
-        byte[] buf = new byte[8192];
-        int n;
-        while ((n = input.read(buf)) != -1) {
-            socketWrapper.dataOut.write(buf, 0, n);
-        }
-        input.close();
+        socketWrapper.sendFirstLineHTTPResponse(version, 200);
+
+        socketWrapper.sendHeaders(
+                Map.of(
+                        "Content-Length", String.valueOf(file.length()),
+                        "Content-Type", getContentType(file)
+                )
+        );
+
+        socketWrapper.out.println();
+        
+        socketWrapper.sendFile(file);
     }
 
+    
     private static String getContentType(File file) throws MalformedURLException, IOException {
         URLConnection connection = file.toURI().toURL().openConnection();
         return connection.getContentType();
